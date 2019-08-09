@@ -1,0 +1,36 @@
+node {
+    def buildInfo = Artifactory.newBuildInfo()
+    def server
+    IMAGE = 'node:8.11.1-alpine'
+    REPO = 'docker'
+    ART = '10.128.0.55:8081'
+
+    stage('pull') {
+        sh "docker login ${ART} -u jenkins -p password"
+        sh "docker pull ${IMAGE}"
+        sh "docker tag ${IMAGE} ${ART}/${REPO}/${IMAGE}"
+    }
+
+    stage('build') {
+        server = Artifactory.server 'local'
+        server.username = 'jenkins'
+        server.password = 'password'
+
+        // If the docker daemon host is not specified, "/var/run/docker.sock" is used as a default value:
+        def rtDocker = Artifactory.docker server:server
+        sh "docker login ${ART} -u jenkins -p password"
+
+        //the docker push
+        buildInfo = rtDocker.push(ART+'/'+REPO+'/'+IMAGE,'docker', buildInfo)
+
+        // Publish the build-info to Artifactory:
+        server.publishBuildInfo buildInfo
+    }
+
+    stage('xray scan') {
+        def failbuild1=false
+        def scanConfig = [ 'buildName' : buildInfo.name, 'buildNumber' : buildInfo.number, 'failBuild' : failbuild1 ]
+        def scanResult = server.xrayScan scanConfig
+        echo scanResult as String
+    }
+}
