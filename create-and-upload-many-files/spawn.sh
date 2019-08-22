@@ -20,4 +20,15 @@ for i in {1..10};do
 	./files.sh $bs $ID &
 	let "bs++"
 done
-echo "complete 10 runs"
+echo "complete 10 runs, starting inode checker"
+while true; do
+	echo "running inode"	
+	inode=$(df -i / | grep -v "I" | awk '{print $5}' | sed 's/%//g')	
+	echo "$inode"
+	if [ $inode -ge 90 ]; then
+		echo "uh oh, inode usage is over 90%, killing split to force upload"
+		kill -9 $(ps -ef | grep split | awk '{print $2}')
+		break
+	fi
+	sleep 30
+done
