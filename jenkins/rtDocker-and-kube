@@ -1,0 +1,60 @@
+# rtDocker and the Jenkins Kubernetes plugin
+def label = "docker-${UUID.randomUUID().toString()}"
+
+podTemplate(label: label, yaml: """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/jnlp-slave
+    tty: true
+    securityContext:
+      runAsUser: 0
+      fsGroup: 0
+      allowPrivilegeEscalation: false
+    volumeMounts:
+    - name: dockersock
+      mountPath: /var/run/docker.sock
+  - name: docker
+    image: docker:latest
+    command: ['cat']
+    tty: true
+    securityContext:
+      runAsUser: 0
+      fsGroup: 0
+    volumeMounts:
+    - name: dockersock
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: dockersock
+    hostPath:
+      path: /var/run/docker.sock
+"""
+  ) {
+        def image = "jenkins/jnlp-slave"
+        node(label) {
+        stage('Build Docker image') {
+            git 'https://github.com/jenkinsci/docker-jnlp-slave.git'
+            container('docker') {
+                sh "docker build -t ${image} ."
+                sh "docker tag ${image} <Artifactory Docker registry>/alpine"
+                
+                def server = Artifactory.server 'art'
+           
+                // Step 2: Create an Artifactory Docker instance:
+                sh 'docker login <Artifactory Docker registry> -u admin -p password'
+                sh 'docker version'
+                
+                def rtDocker = Artifactory.docker server: server
+               
+                // Step 3: Push the image to Artifactory.
+                sh 'ls /var/run && whoami'
+                def buildInfo = rtDocker.push '<Artifactory Docker registry>/alpine:latest', 'docker-local'
+                  
+                // Step 4: Publish the build-info to Artifactory:
+                server.publishBuildInfo buildInfo
+            } 
+        }
+    }
+}
